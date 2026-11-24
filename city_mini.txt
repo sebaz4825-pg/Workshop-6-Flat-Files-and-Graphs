@@ -1,0 +1,7 @@
+A, B, 300, TwoWay
+B, C, 100, TwoWay
+C, D, 200, OneWay
+B, E, 250, Twoway
+E, F, 150, Twoway
+D, F, 400, Twoway
+F, G, 120, Twoway
