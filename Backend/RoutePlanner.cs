@@ -285,12 +285,19 @@ public sealed class RoutePlanner
                 int pickupIdx = route.FindIndex(s => s.PackageId == pkg.Id && s.Kind == StopKind.Pickup);
                 int deliveryIdx = route.FindIndex(s => s.PackageId == pkg.Id && s.Kind == StopKind.Delivery);
 
+                if (pickupIdx < 0 || deliveryIdx < 0 || pickupIdx == deliveryIdx)
+                {
+                    continue;
+                }
+
                 Stop pickupStop = route[pickupIdx];
                 Stop deliveryStop = route[deliveryIdx];
 
-                // Remove higher index first so lower index stays valid.
-                route.RemoveAt(deliveryIdx);
-                route.RemoveAt(pickupIdx);
+                int firstIdx = Math.Min(pickupIdx, deliveryIdx);
+                int secondIdx = Math.Max(pickupIdx, deliveryIdx);
+
+                route.RemoveAt(secondIdx);
+                route.RemoveAt(firstIdx);
 
                 int bestP = pickupIdx;
                 int bestD = deliveryIdx;
@@ -301,7 +308,7 @@ public sealed class RoutePlanner
                 {
                     route.Insert(pIdx, pickupStop);
 
-                    for (int dIdx = pIdx + 1; dIdx <= n + 1; dIdx++)
+                    for (int dIdx = pIdx + 1; dIdx <= route.Count; dIdx++)
                     {
                         route.Insert(dIdx, deliveryStop);
 
@@ -319,7 +326,10 @@ public sealed class RoutePlanner
                     route.RemoveAt(pIdx);
                 }
 
+                // Restore best valid pair positions safely.
+                bestP = Math.Clamp(bestP, 0, route.Count);
                 route.Insert(bestP, pickupStop);
+                bestD = Math.Clamp(bestD, bestP + 1, route.Count);
                 route.Insert(bestD, deliveryStop);
 
                 if (bestPairCost + 1e-6 < currentBestCost)
@@ -339,25 +349,38 @@ public sealed class RoutePlanner
                 if (movingStop.Kind == StopKind.Pickup)
                 {
                     int deliveryPos = route.FindIndex(s => s.PackageId == movingStop.PackageId && s.Kind == StopKind.Delivery);
+                    if (deliveryPos <= i)
+                    {
+                        continue;
+                    }
                     maxAllowed = deliveryPos - 1;
                 }
                 else
                 {
                     int pickupPos = route.FindIndex(s => s.PackageId == movingStop.PackageId && s.Kind == StopKind.Pickup);
-                    minAllowed = pickupPos;
+                    if (pickupPos < 0 || pickupPos >= i)
+                    {
+                        continue;
+                    }
+                    minAllowed = pickupPos + 1;
                 }
 
-                if (minAllowed >= maxAllowed)
+                if (minAllowed > maxAllowed)
                 {
                     continue;
                 }
 
                 route.RemoveAt(i);
 
-                int bestInsertPos = i;
+                // After removing element at index i, indices > i shift left by 1.
+                int remainingMaxIndex = route.Count;
+                int safeMin = Math.Clamp(minAllowed, 0, remainingMaxIndex);
+                int safeMax = Math.Clamp(maxAllowed, safeMin, remainingMaxIndex);
+
+                int bestInsertPos = Math.Clamp(i, safeMin, safeMax);
                 double bestSingleCost = currentBestCost;
 
-                for (int pos = minAllowed; pos <= maxAllowed; pos++)
+                for (int pos = safeMin; pos <= safeMax; pos++)
                 {
                     route.Insert(pos, movingStop);
                     double candidateCost = TotalDistance(route);
@@ -369,6 +392,7 @@ public sealed class RoutePlanner
                     route.RemoveAt(pos);
                 }
 
+                bestInsertPos = Math.Clamp(bestInsertPos, 0, route.Count);
                 route.Insert(bestInsertPos, movingStop);
 
                 if (bestSingleCost + 1e-6 < currentBestCost)
